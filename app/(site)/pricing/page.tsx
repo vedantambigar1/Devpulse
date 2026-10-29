@@ -3,7 +3,8 @@ import { PricingPlans } from '@/components/PricingPlans';
 
 export const metadata: Metadata = { title: 'Pricing' };
 
-export default function PricingPage({ searchParams }: { searchParams: { u?: string } }) {
+export default async function PricingPage(props: { searchParams: Promise<{ u?: string }> }) {
+  const searchParams = await props.searchParams;
   return (
     <div className="container section" style={{ paddingTop: 64 }}>
       <div className="center">

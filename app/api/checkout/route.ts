@@ -1,4 +1,5 @@
-import { appUrl, json } from '@/lib/http';
+import { appUrl, clientIp, json } from '@/lib/http';
+import { rateLimit } from '@/lib/ratelimit';
 import { USERNAME_RE } from '@/lib/github';
 import { PLANS, type Plan } from '@/lib/plans';
 
@@ -8,16 +9,18 @@ const enc = encodeURIComponent;
 
 /** POST /api/checkout { plan, username } → { url } to redirect the browser to Stripe Checkout. */
 export async function POST(req: Request) {
+  if (!rateLimit(`checkout:${clientIp(req)}`, 10)) return json({ error: 'Too many requests' }, 429);
   let body: { plan?: string; username?: string };
   try {
     body = await req.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Bad request');
   } catch {
     return json({ error: 'Bad request' }, 400);
   }
 
   const plan = body.plan as Plan;
-  const username = body.username ?? '';
-  if (!(plan in PLANS)) return json({ error: 'Unknown plan' }, 400);
+  const username = typeof body.username === 'string' ? body.username : '';
+  if (plan !== 'monthly' && plan !== 'lifetime') return json({ error: 'Unknown plan' }, 400);
   if (!USERNAME_RE.test(username)) return json({ error: 'Enter a valid GitHub username first' }, 400);
 
   const secretKey = process.env.STRIPE_SECRET_KEY;

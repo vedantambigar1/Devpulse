@@ -9,13 +9,14 @@ export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'GitHub activity widget', robots: { index: false } };
 
-export default async function EmbedPage({
-  params,
-  searchParams,
-}: {
-  params: { username: string };
-  searchParams: Record<string, string | string[] | undefined>;
-}) {
+export default async function EmbedPage(
+  props: {
+    params: Promise<{ username: string }>;
+    searchParams: Promise<Record<string, string | string[] | undefined>>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const opts = parseOptions(searchParams);
   let content: React.ReactNode;
 

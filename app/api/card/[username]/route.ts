@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic';
 export const OPTIONS = preflight;
 
 /** GET /api/card/:username.svg → static SVG card, usable as an <img> in READMEs, Notion, email. */
-export async function GET(req: Request, { params }: { params: { username: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ username: string }> }) {
+  const params = await props.params;
   if (!rateLimit(`card:${clientIp(req)}`, 120)) return new Response('Too many requests', { status: 429, headers: CORS });
   const username = params.username.replace(/\.svg$/i, '');
   try {

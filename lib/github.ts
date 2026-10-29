@@ -2,7 +2,8 @@ import type { ActivityData, Day, LangInfo, Level, RepoInfo } from './types';
 import { computeStreaks } from './streak';
 import { demoActivity } from './demo';
 
-export const USERNAME_RE = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
+import { USERNAME_RE } from './username';
+export { USERNAME_RE } from './username';
 
 export class GitHubError extends Error {
   constructor(message: string, public status: number) {
@@ -31,7 +32,7 @@ const QUERY = /* GraphQL */ `
       bio
       followers { totalCount }
       following { totalCount }
-      repositories(ownerAffiliation: OWNER, isFork: false, privacy: PUBLIC, first: 100, orderBy: { field: STARGAZERS, direction: DESC }) {
+      repositories(ownerAffiliations: [OWNER], isFork: false, privacy: PUBLIC, first: 100, orderBy: { field: STARGAZERS, direction: DESC }) {
         totalCount
         nodes {
           name
@@ -74,7 +75,7 @@ export async function getActivity(username: string): Promise<ActivityData> {
     try {
       data = await fetchFromGitHub(username, token);
     } catch (e) {
-      if (hit) return hit.data; // serve stale data rather than failing
+      if (hit && !(e instanceof GitHubError && e.status === 404)) return hit.data;
       throw e;
     }
   }
@@ -97,6 +98,7 @@ async function fetchFromGitHub(username: string, token: string): Promise<Activit
     },
     body: JSON.stringify({ query: QUERY, variables: { login: username } }),
     cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (res.status === 401) throw new GitHubError('GitHub token is invalid or expired', 502);
@@ -104,10 +106,12 @@ async function fetchFromGitHub(username: string, token: string): Promise<Activit
   if (!res.ok) throw new GitHubError(`GitHub responded with ${res.status}`, 502);
 
   const json = await res.json();
-  if (json.errors?.some((e: { type?: string }) => e.type === 'NOT_FOUND') || !json.data?.user) {
+  if (json.errors?.some((e: { type?: string; path?: string[] }) => e.type === 'NOT_FOUND' && e.path?.[0] === 'user')) {
     throw new GitHubError(`GitHub user “${username}” not found`, 404);
   }
   if (json.errors?.length) throw new GitHubError('GitHub GraphQL error', 502);
+  if (json.data?.user === null) throw new GitHubError(`GitHub user “${username}” not found`, 404);
+  if (!json.data?.user) throw new GitHubError('Invalid response from GitHub', 502);
 
   const u = json.data.user;
   const cc = u.contributionsCollection;

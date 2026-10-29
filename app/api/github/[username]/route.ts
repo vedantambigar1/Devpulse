@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 export const OPTIONS = preflight;
 
 /** GET /api/github/:username → normalised activity JSON (streaks, graph, repos, languages). */
-export async function GET(req: Request, { params }: { params: { username: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ username: string }> }) {
+  const params = await props.params;
   if (!rateLimit(`gh:${clientIp(req)}`, 60)) return json({ error: 'Too many requests' }, 429);
   try {
     const data = await getActivity(params.username);

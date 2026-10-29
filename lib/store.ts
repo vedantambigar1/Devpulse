@@ -95,7 +95,7 @@ async function pipeline(cmds: Cmd[]): Promise<unknown[]> {
 }
 
 const pairs = (flat: unknown): Record<string, number> => {
-  const o: Record<string, number> = {};
+  const o: Record<string, number> = Object.create(null);
   const a = (flat as string[] | null) ?? [];
   for (let i = 0; i < a.length; i += 2) o[a[i]] = Number(a[i + 1]);
   return o;
@@ -103,6 +103,15 @@ const pairs = (flat: unknown): Record<string, number> => {
 
 // Adds a referrer only if it already exists or there is still room (caps hash growth from spam).
 const HINCR_CAPPED = `if redis.call('HEXISTS',KEYS[1],ARGV[1])==1 or redis.call('HLEN',KEYS[1])<tonumber(ARGV[2]) then return redis.call('HINCRBY',KEYS[1],ARGV[1],1) end return 0`;
+
+// Reserve the session and write its license/indexes atomically across webhook retries/instances.
+const SAVE_LICENSE = `
+if ARGV[3]=='1' and redis.call('EXISTS',KEYS[3])==1 then return 0 end
+redis.call('SET',KEYS[1],ARGV[1])
+redis.call('SADD',KEYS[2],ARGV[2])
+if ARGV[3]=='1' then redis.call('SET',KEYS[3],ARGV[2]) end
+if ARGV[4]=='1' then redis.call('SADD',KEYS[4],ARGV[2]) end
+return 1`;
 
 const K = {
   total: (u: string) => `dp:a:${u}:total`,
@@ -134,10 +143,9 @@ const redisStore = {
   async saveLicense(rec: NewLicense) {
     const keyHash = hashKey(rec.key);
     const full: LicenseRecord = { ...rec, username: rec.username.toLowerCase(), keyHash, status: 'active', createdAt: new Date().toISOString() };
-    const cmds: Cmd[] = [['SET', K.lic(keyHash), JSON.stringify(full)], ['SADD', K.byUser(full.username), keyHash]];
-    if (full.sessionId) cmds.push(['SET', K.bySession(full.sessionId), keyHash]);
-    if (full.subscriptionId) cmds.push(['SADD', K.bySub(full.subscriptionId), keyHash]);
-    await pipeline(cmds);
+    await cmd('EVAL', SAVE_LICENSE, 4, K.lic(keyHash), K.byUser(full.username),
+      full.sessionId ? K.bySession(full.sessionId) : '', full.subscriptionId ? K.bySub(full.subscriptionId) : '',
+      JSON.stringify(full), keyHash, full.sessionId ? '1' : '0', full.subscriptionId ? '1' : '0');
   },
 
   async getLicenseByHash(hash: string): Promise<LicenseRecord | undefined> {
@@ -216,21 +224,29 @@ const fileStore = {
   async recordView(username: string, host: string) {
     const u = username.toLowerCase();
     await mutate((db) => {
-      const a = (db.analytics[u] ??= { total: 0, byDay: {}, refs: {} });
+      const a = Object.prototype.hasOwnProperty.call(db.analytics, u)
+        ? db.analytics[u]
+        : (db.analytics[u] = { total: 0, byDay: {}, refs: {} });
       a.total += 1;
       const day = todayISO();
       a.byDay[day] = (a.byDay[day] ?? 0) + 1;
-      if (a.refs[host] !== undefined || Object.keys(a.refs).length < MAX_REFERRERS) a.refs[host] = (a.refs[host] ?? 0) + 1;
+      const ownsRef = Object.prototype.hasOwnProperty.call(a.refs, host);
+      if (ownsRef || Object.keys(a.refs).length < MAX_REFERRERS) {
+        Object.defineProperty(a.refs, host, { value: (ownsRef ? a.refs[host] : 0) + 1, writable: true, enumerable: true, configurable: true });
+      }
     });
   },
 
   async getAnalytics(username: string): Promise<AnalyticsSummary> {
-    const a = (await load()).analytics[username.toLowerCase()] ?? { total: 0, byDay: {}, refs: {} };
+    const analytics = (await load()).analytics;
+    const u = username.toLowerCase();
+    const a = Object.prototype.hasOwnProperty.call(analytics, u) ? analytics[u] : { total: 0, byDay: {}, refs: {} };
     return summarise(a.total, a.byDay, a.refs);
   },
 
   async saveLicense(rec: NewLicense) {
     await mutate((db) => {
+      if (rec.sessionId && Object.values(db.licenses).some((l) => l.sessionId === rec.sessionId)) return;
       const keyHash = hashKey(rec.key);
       db.licenses[keyHash] = { ...rec, username: rec.username.toLowerCase(), keyHash, status: 'active', createdAt: new Date().toISOString() };
     });

@@ -7,6 +7,7 @@ import { CopyButton } from '@/components/CopyButton';
 import { DEFAULT_OPTIONS, resolveTheme, SECTIONS, SECTION_LABELS, toQuery, type Section, type WidgetOptions } from '@/lib/options';
 import { THEMES } from '@/lib/themes';
 import type { ActivityData } from '@/lib/types';
+import { normalizeUsername } from '@/lib/username';
 
 type Tab = 'script' | 'iframe' | 'svg' | 'markdown' | 'notion';
 const TABS: [Tab, string][] = [['script', 'Script'], ['iframe', 'iFrame'], ['svg', 'SVG image'], ['markdown', 'Markdown'], ['notion', 'Notion']];
@@ -15,10 +16,11 @@ const USER_RE = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 
 export function Builder({ initialUsername }: { initialUsername: string }) {
   const [input, setInput] = useState(initialUsername);
-  const [username, setUsername] = useState(initialUsername);
+  const [username, setUsername] = useState(() => normalizeUsername(initialUsername));
   const [opts, setOpts] = useState<WidgetOptions>(DEFAULT_OPTIONS);
   const [data, setData] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reload, setReload] = useState(0);
   const [error, setError] = useState('');
   const [pro, setPro] = useState(false);
   const [tab, setTab] = useState<Tab>('script');
@@ -36,10 +38,12 @@ export function Builder({ initialUsername }: { initialUsername: string }) {
     }
     const ctrl = new AbortController();
     setLoading(true);
+    setPro(false);
     setError('');
     fetch(`/api/github/${encodeURIComponent(username)}`, { signal: ctrl.signal })
       .then(async (r) => {
         const j = await r.json();
+        if (ctrl.signal.aborted) return;
         if (!r.ok) throw new Error(j.error || 'Failed to load');
         setData(j as ActivityData);
       })
@@ -49,14 +53,14 @@ export function Builder({ initialUsername }: { initialUsername: string }) {
           setError(e.message);
         }
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
 
     fetch(`/api/pro/${encodeURIComponent(username)}`, { signal: ctrl.signal })
       .then((r) => r.json())
-      .then((j) => setPro(Boolean(j.pro)))
-      .catch(() => setPro(false));
+      .then((j) => { if (!ctrl.signal.aborted) setPro(Boolean(j.pro)); })
+      .catch(() => { if (!ctrl.signal.aborted) setPro(false); });
     return () => ctrl.abort();
-  }, [username]);
+  }, [username, reload]);
 
   const set = <K extends keyof WidgetOptions>(k: K, v: WidgetOptions[K]) => setOpts((o) => ({ ...o, [k]: v }));
   const toggleSection = (s: Section) =>
@@ -71,7 +75,7 @@ export function Builder({ initialUsername }: { initialUsername: string }) {
   const locked = usesProFeature && !pro;
 
   const q = toQuery(opts);
-  const u = username || 'your-username';
+  const u = normalizeUsername(username) || 'your-username';
   const embedUrl = `${origin}/embed/${u}${q ? `?${q}` : ''}`;
   const svgUrl = `${origin}/api/card/${u}.svg${q ? `?${q}` : ''}`;
 
@@ -111,7 +115,14 @@ export function Builder({ initialUsername }: { initialUsername: string }) {
             className="panel"
             onSubmit={(e) => {
               e.preventDefault();
-              setUsername(input.trim().replace(/^@/, ''));
+              const next = normalizeUsername(input);
+              if (!next) {
+                setError('Enter a valid GitHub username or profile URL.');
+                setData(null);
+                return;
+              }
+              setUsername(next);
+              setReload((n) => n + 1);
             }}
           >
             <h3>GitHub username</h3>

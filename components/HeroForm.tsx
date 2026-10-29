@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { normalizeUsername } from '@/lib/username';
 
 export function HeroForm() {
   const router = useRouter();
@@ -11,7 +12,7 @@ export function HeroForm() {
       className="try"
       onSubmit={(e) => {
         e.preventDefault();
-        const name = u.trim().replace(/^@/, '');
+        const name = normalizeUsername(u);
         router.push(name ? `/builder?u=${encodeURIComponent(name)}` : '/builder');
       }}
     >

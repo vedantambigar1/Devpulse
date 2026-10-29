@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  * domains' DNS at this deployment. Requests to the domain's root render that user's widget page.
  */
 function domainMap(): Record<string, string> {
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = Object.create(null);
   for (const pair of (process.env.CUSTOM_DOMAINS ?? '').split(',')) {
     const [host, user] = pair.split('=').map((s) => s?.trim().toLowerCase());
     if (host && user) map[host] = user;

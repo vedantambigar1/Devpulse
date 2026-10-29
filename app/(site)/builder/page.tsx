@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import { Builder } from '@/components/Builder';
+import { normalizeUsername } from '@/lib/username';
 
 export const metadata: Metadata = { title: 'Widget builder' };
 
-export default function BuilderPage({ searchParams }: { searchParams: { u?: string } }) {
-  const u = typeof searchParams.u === 'string' ? searchParams.u.slice(0, 39) : '';
+export default async function BuilderPage(props: { searchParams: Promise<{ u?: string }> }) {
+  const searchParams = await props.searchParams;
+  const u = typeof searchParams.u === 'string' ? normalizeUsername(searchParams.u) : '';
   return (
     <>
       <div className="container" style={{ paddingTop: 48 }}>

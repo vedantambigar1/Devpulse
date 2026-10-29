@@ -1,6 +1,6 @@
 # DevPulse — Developer Portfolio & GitHub Activity Sync Widget
 
-An embeddable, customizable widget that shows a developer's live GitHub activity — streaks, contribution graph, languages and top repos — on any portfolio or Notion page with **one snippet**. Built with Next.js 14 (App Router) + the official GitHub GraphQL API.
+An embeddable, customizable widget that shows a developer's live GitHub activity — streaks, contribution graph, languages and top repos — on any portfolio or Notion page with **one snippet**. Built with Next.js 15 (App Router) + the official GitHub GraphQL API.
 
 ```html
 <script src="https://your-app.com/widget.js" data-username="octocat" data-theme="dark" async></script>
@@ -56,7 +56,7 @@ Pro is attached to a **GitHub username**, checked server-side, so no secret ever
 | Custom domain hosting | | ✓ |
 
 1. In Stripe create two Prices — **$3/month recurring** and **$5 one-time** — and put their IDs in `STRIPE_PRICE_MONTHLY` / `STRIPE_PRICE_LIFETIME`, plus `STRIPE_SECRET_KEY`.
-2. Add a webhook endpoint `https://your-app.com/api/webhook/stripe` for `checkout.session.completed` and `customer.subscription.deleted`; set `STRIPE_WEBHOOK_SECRET`.
+2. Add a webhook endpoint `https://your-app.com/api/webhook/stripe` for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.updated` and `customer.subscription.deleted`; set `STRIPE_WEBHOOK_SECRET`.
 3. Set `LICENSE_SECRET` (`openssl rand -hex 32`). **Required in production.**
 
 On payment the webhook issues a signed license key (shown on `/success`) and activates Pro for that username. Cancelling a monthly subscription revokes it.
@@ -87,6 +87,10 @@ Redis layout: `dp:l:<sha256(key)>` (license JSON), `dp:lu:<username>` / `dp:ls:<
 The in-memory GitHub cache and rate limiter (`lib/ratelimit.ts`) remain per-instance. That is fine for v1; swap the limiter for `@upstash/ratelimit` if abuse becomes a problem.
 
 ## Notes & next steps
+
+- The builder accepts a username, `@handle` or GitHub profile URL. Repository URLs and other hosts are rejected.
+- Run `npm test`, `npm run typecheck` and `npm run build` before deploying. Tests cover GitHub query/error handling, safe profile URL parsing, payment validation, duplicate fulfillment and analytics input handling.
+- Next.js is kept on the patched 15.x line; the PostCSS override addresses advisories in Next.js's pinned dependency. Review the override when upgrading Next.js.
 
 - Fonts are self-hosted via `@fontsource/anton` (no external font requests).
 - GitHub responses are cached 15 min (`CACHE_TTL_SECONDS`) and stale data is served if GitHub errors.
